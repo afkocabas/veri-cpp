@@ -45,8 +45,8 @@ module AsyncFIFO #(
   ptr_t read_ptr_gray;
 
   // Look-ahead Gray Coded Pointers
-  ptr_t next_write_gray;
-  ptr_t next_read_gray;
+  ptr_t next_write_ptr_gray;
+  ptr_t next_read_ptr_gray;
 
   // 2 Flip-Flop Registers for the Synchronization
   ptr_t ff1_r, ff2_r;
@@ -55,14 +55,16 @@ module AsyncFIFO #(
   // Flipped Register for Write Domain
   ptr_t flipped_ff2_w;
 
-  // Next Write Pointer to Raise Full Flag.
+  // Next Write Pointer to Raise Full & Empty Flags.
   assign next_write_ptr = write_ptr + 1;
   assign next_read_ptr = read_ptr + 1;
 
   // Gray Code Convertions
   assign write_ptr_gray = (write_ptr >> 1) ^ write_ptr;
   assign read_ptr_gray = (read_ptr >> 1) ^ read_ptr;
+
   assign next_write_ptr_gray = (next_write_ptr >> 1) ^ next_write_ptr;
+  assign next_read_ptr_gray = (next_read_ptr >> 1) ^ next_read_ptr;
 
   // Checking Wrap Around in Write Domain
   assign flipped_ff2_w = ff1_w ^ ((ptr_t'(1) << ADDR_WIDTH) | (ptr_t'(1) << (ADDR_WIDTH - 1)));
@@ -85,7 +87,7 @@ module AsyncFIFO #(
 
       if (read_en && ff2_r != read_ptr_gray) begin
 
-        if (ff2_r == next_read_gray) empty <= 1;
+        if (ff2_r == next_read_ptr_gray) empty <= 1;
         else empty <= 0;
 
         read_data <= FIFO[read_ptr[ADDR_WIDTH-1:0]];
