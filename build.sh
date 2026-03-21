@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# Exporting the latest g++ compiler
+export CXX=g++-14
+export CC=gcc-14
+
+# Flags to be passed to the c++ compiler used by verilator
+COMPILER=verilator
+FLAGS=" -std=c++23"
+TARGET_DIR="obj_dir"
+
+# Parsing the parameters passed.
+OPTION="$1"
+TOP_LEVEL_MODULE="$2"
+TEST_BENCH_CC="$3"
+
+# Generating file names to be emitted.
+BASE_PATH=$(basename $TOP_LEVEL_MODULE)
+BASE_NAME="${BASE_PATH%.*}"
+EXE="V${BASE_NAME}"
+TOP_LEVEL_MAKE="${EXE}.mk"
+
+# Usage function
+function usage() {
+  echo "usage: ${0} [\"0 TOP_LEVEL_MODULE\" to generate headers | \"1 TOP_LEVEL_MODULE TEST_BENCH_CC\" to get final executable]"
+  exit 1
+}
+
+# Creates .h and .cpp files
+function generateHeaders() {
+  $COMPILER --cc $TOP_LEVEL_MODULE
+  echo "Top level module ${TOP_LEVEL_MODULE} compiled successfully."
+}
+
+# WARN: It attempts to generate vaweforms by default.
+# Compiles down everything and creates the binary executable.
+function compileTestBench() {
+  $COMPILER --cc $TOP_LEVEL_MODULE --exe $TEST_BENCH_CC -Mdir $TARGET_DIR --trace &&
+    make -C $TARGET_DIR -f $TOP_LEVEL_MAKE CXX="$CXX" CXXFLAGS+="$FLAGS" &&
+    echo "Top level module ${TOP_LEVEL_MODULE} and test bench ${TEST_BENCH_CC} compiled successfully." &&
+    echo "Executable ${EXE} emitted."
+}
+
+# Main function
+function main() {
+
+  case "$OPTION" in
+  0)
+    if [[ $# < 1 ]]; then
+      usage
+    fi
+    generateHeaders
+    ;;
+  1)
+    if [[ $# < 2 ]]; then
+      usage
+    fi
+    compileTestBench
+    ;;
+  *)
+    usage
+    ;;
+  esac
+}
+
+# Passing all parameters to the main function as is.
+main "$@"
