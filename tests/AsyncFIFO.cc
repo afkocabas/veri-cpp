@@ -13,6 +13,8 @@ using FIFO_ITEM = uint8_t;
 
 struct FIFO_TestBench {
 
+  FIFO_TestBench();
+
   // Half Periods of the signals
   const static int write_half_period = WHP;
   const static int read_half_period  = RHP;
@@ -63,6 +65,16 @@ struct FIFO_TestBench {
 };
 
 // FIFO_TestBench Function Definitions
+
+FIFO_TestBench::FIFO_TestBench() {
+  fifo             = std::make_unique<VAsyncFIFO>();
+  fifo->write_clk  = 0;
+  fifo->read_clk   = 0;
+  fifo->res        = 0;
+  fifo->read_en    = 0;
+  fifo->write_en   = 0;
+  fifo->write_data = 0;
+}
 
 /*
  WARN: For now, FIFO_TestBench::expect_equal exits when it fails to match actual and expected.
