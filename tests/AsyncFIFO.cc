@@ -23,11 +23,11 @@ struct FIFO_TestBench {
   std::unique_ptr<VAsyncFIFO> fifo;
 
   // Simulation clock counter for global domain
-  vluint64_t sim_time = 0;
+  vluint64_t sim_time;
 
   // Previous clock histories to detect edges
-  bool prev_write_clock = 0;
-  bool prev_read_clock  = 0;
+  bool prev_write_clock;
+  bool prev_read_clock;
 
   // Clock domains for write and read operations
   void toggle_write();
@@ -67,6 +67,11 @@ struct FIFO_TestBench {
 // FIFO_TestBench Function Definitions
 
 FIFO_TestBench::FIFO_TestBench() {
+
+  sim_time         = 0;
+  prev_read_clock  = 0;
+  prev_write_clock = 0;
+
   fifo             = std::make_unique<VAsyncFIFO>();
   fifo->write_clk  = 0;
   fifo->read_clk   = 0;
@@ -74,6 +79,8 @@ FIFO_TestBench::FIFO_TestBench() {
   fifo->read_en    = 0;
   fifo->write_en   = 0;
   fifo->write_data = 0;
+
+  eval();
 }
 
 /*
