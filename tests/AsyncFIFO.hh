@@ -53,8 +53,8 @@ struct FIFO_TestBench {
   void save_prev_write();
 
   // Wait helpers
-  void wait_write_posedge();
-  void wait_read_posedge();
+  void wait_write_posedge(int count = 1);
+  void wait_read_posedge(int count = 1);
 
   // Write and read operations
   void write(FIFO_ITEM data);
@@ -116,23 +116,27 @@ FIFO_TestBench::FIFO_TestBench() {
 */
 inline void FIFO_TestBench::expect_equal(FIFO_ITEM actual, FIFO_ITEM expected, std::string message) {
   if (actual != expected) {
-    std::println("Actual: {}, Expected: {}. {} (@ {})\n", actual, expected, message.c_str(), sim_time);
+    std::println("Actual: {}, Expected: {}. {} (@ {})", actual, expected, message.c_str(), sim_time);
     exit(1);
   }
 };
 inline void FIFO_TestBench::expect_full(bool full) { expect_equal(fifo->full, full, "FIFO full flag mismatch occured."); };
 inline void FIFO_TestBench::expect_empty(bool empty) { expect_equal(fifo->empty, empty, "FIFO empty flag mismatch occured."); };
 
-void FIFO_TestBench::wait_write_posedge() {
-  do {
+void FIFO_TestBench::wait_write_posedge(int count) {
+  int i = 0;
+  while (i < count) {
     global_tick(1);
-  } while (!is_write_posedge());
+    if (is_write_posedge()) i++;
+  }
 };
 
-void FIFO_TestBench::wait_read_posedge() {
-  do {
+void FIFO_TestBench::wait_read_posedge(int count) {
+  int i = 0;
+  while (i < count) {
     global_tick(1);
-  } while (!is_read_posedge());
+    if (is_read_posedge()) i++;
+  }
 };
 
 inline void FIFO_TestBench::toggle_write() { fifo->write_clk = !fifo->write_clk; };
@@ -158,7 +162,9 @@ void FIFO_TestBench::global_tick(int cycles) {
     if (sim_time % read_half_period == 0) toggle_read();
     eval();
     traceFilePointer->dump(sim_time);
+#ifdef LOG
     printFIFO();
+#endif
 
     // Clocks
     sim_time++;
