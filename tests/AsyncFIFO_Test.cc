@@ -1,5 +1,7 @@
 #define LOG
+#define SIZE 8
 #define FIFO_TESTBENCH_IMPLEMENTATION
+
 #include "AsyncFIFO.hh"
 #include <print>
 #include <queue>
@@ -19,6 +21,16 @@ STATUS test_fill_until_full(FIFO_TestBench& fb);
 
 // Function definitions
 
+STATUS test_drain_until_empty(FIFO_TestBench& fb) {
+  for (int i = 0; i < SIZE; i++) {
+    auto element = fb.read();
+  }
+  fb.expect_empty();
+  std::println("[SUCCESS]: Drain until empty test passed.");
+
+  return STATUS::SUCCESS;
+};
+
 STATUS test_fill_until_full(FIFO_TestBench& fb, SW_FIFO& swf) {
   // Write items in order
   int size = swf.size();
@@ -37,7 +49,6 @@ STATUS test_fill_until_full(FIFO_TestBench& fb, SW_FIFO& swf) {
 };
 
 STATUS test_reset(FIFO_TestBench& fb) {
-  std::println("[TEST]: Reset test is issued.");
   fb.reset();
   fb.expect_empty();
   fb.expect_full(0);
@@ -47,7 +58,6 @@ STATUS test_reset(FIFO_TestBench& fb) {
 }
 
 STATUS test_single_read(FIFO_TestBench& fb, FIFO_ITEM expected) {
-  std::println("[TEST]: Single read test is issued.");
   FIFO_ITEM item = fb.read();
   fb.expect_equal(item, expected, "Failed to read the element expected.");
   std::println("[SUCCESS]: Single read test passed.");
@@ -57,7 +67,6 @@ STATUS test_single_read(FIFO_TestBench& fb, FIFO_ITEM expected) {
 
 STATUS test_first_write(FIFO_TestBench& fb, FIFO_ITEM item) {
 
-  std::println("[TEST]: Single write test is issued.");
   fb.write(item);
   fb.wait_read_posedge(3);
   fb.expect_empty(false);
@@ -80,6 +89,7 @@ int main(int argc, char* argv[]) {
   test_single_read(fb, 'c');
 
   test_fill_until_full(fb, swf);
+  test_drain_until_empty(fb);
 
   return 0;
 }
