@@ -13,22 +13,22 @@ TARGET_DIR="obj_dir"
 
 # Usage function
 function usage() {
-  echo "usage: ${0} [\"0 TOP_LEVEL_MODULE\" to generate headers | \"1 TOP_LEVEL_MODULE TEST_BENCH_CC\" to get final executable]"
+  echo "[USAGE]: ${0} [\"0 TOP_LEVEL_MODULE\" to generate headers | \"1 TOP_LEVEL_MODULE TEST_BENCH_CC\" to get final executable]"
   exit 1
 }
 
 # Creates .h and .cpp files
 function generateHeaders() {
   $COMPILER --cc $ALL_MODULES &&
-    echo "Headers generated successfully."
+    echo "[SUCCESS]: Headers generated successfully."
 }
 
 # WARN: It attempts to generate vaweforms by default.
 function compileTestBench() {
   $COMPILER --cc $ALL_MODULES --exe $TEST_BENCH_CC -Mdir $TARGET_DIR --trace &&
     make -C $TARGET_DIR -f $TOP_LEVEL_MAKE CXX="$CXX" CXXFLAGS+="$FLAGS" &&
-    echo "Top level module ${TOP_LEVEL_MODULE} and test bench ${TEST_BENCH_CC} compiled successfully." &&
-    echo "Executable ${EXE} emitted."
+    echo "[SUCCESS]: Top level module ${TOP_LEVEL_MODULE} and test bench ${TEST_BENCH_CC} compiled successfully." &&
+    echo "[SUCCESS]: Executable ${EXE} emitted."
 }
 
 function parseArguments() {
