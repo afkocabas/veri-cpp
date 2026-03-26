@@ -10,15 +10,6 @@ FLAGS=" -std=c++23"
 TARGET_DIR="obj_dir"
 
 # Parsing the parameters passed.
-OPTION="$1"
-TOP_LEVEL_MODULE="$2"
-TEST_BENCH_CC="$3"
-
-# Generating file names to be emitted.
-BASE_PATH=$(basename $TOP_LEVEL_MODULE)
-BASE_NAME="${BASE_PATH%.*}"
-EXE="V${BASE_NAME}"
-TOP_LEVEL_MAKE="${EXE}.mk"
 
 # Usage function
 function usage() {
@@ -28,21 +19,45 @@ function usage() {
 
 # Creates .h and .cpp files
 function generateHeaders() {
-  $COMPILER --cc $TOP_LEVEL_MODULE &&
+  $COMPILER --cc $ALL_MODULES &&
     echo "Headers generated successfully."
 }
 
 # WARN: It attempts to generate vaweforms by default.
-# Compiles down everything and creates the binary executable.
 function compileTestBench() {
-  $COMPILER --cc $TOP_LEVEL_MODULE --exe $TEST_BENCH_CC -Mdir $TARGET_DIR --trace &&
+  $COMPILER --cc $ALL_MODULES --exe $TEST_BENCH_CC -Mdir $TARGET_DIR --trace &&
     make -C $TARGET_DIR -f $TOP_LEVEL_MAKE CXX="$CXX" CXXFLAGS+="$FLAGS" &&
     echo "Top level module ${TOP_LEVEL_MODULE} and test bench ${TEST_BENCH_CC} compiled successfully." &&
     echo "Executable ${EXE} emitted."
 }
 
+function parseArguments() {
+  args=("$@")
+
+  NUM_PARAMETERS=$#
+  OPTION="${args[0]}"
+  TEST_BENCH_CC="${args[$NUM_PARAMETERS-1]}"
+  TOP_LEVEL_MODULE=""
+  ALL_MODULES=""
+
+  if [[ $OPTION == 0 ]]; then
+    TOP_LEVEL_MODULE="${args[$NUM_PARAMETERS-1]}"
+    ALL_MODULES="${args[@]:1}"
+  else
+    TOP_LEVEL_MODULE="${args[$NUM_PARAMETERS-2]}"
+    ALL_MODULES=("${args[@]:1:${#args[@]}-2}")
+  fi
+
+  # Generating file names to be emitted.
+  BASE_PATH=$(basename $TOP_LEVEL_MODULE)
+  BASE_NAME="${BASE_PATH%.*}"
+  EXE="V${BASE_NAME}"
+  TOP_LEVEL_MAKE="${EXE}.mk"
+}
+
 # Main function
 function main() {
+  parseArguments "$@"
 
   case "$OPTION" in
   0)
