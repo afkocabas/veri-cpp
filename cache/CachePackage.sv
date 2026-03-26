@@ -23,12 +23,17 @@ package CachePackage;
   parameter int WORD_OFFSET_BITS = $clog2(WORDS_PER_CACHE_BLOCK);
 
   // Type Definitions
-  typedef logic [CACHE_BLOCK_SIZE_IN_BITS - 1:0] cacheblock_t;
-  typedef logic [ADDRESS_SPACE_IN_BITS -1:0] address_t;
+  typedef logic [CACHE_BLOCK_SIZE_IN_BITS - 1:0] cacheblock_t;  // 512 bits at the moment.
+  typedef logic [ADDRESS_SPACE_IN_BITS -1:0] address_t;  // 32 bits at the moment.
 
   typedef logic [OFFSET_BITS -1:0] offset_t;
   typedef logic [INDEX_BITS -1:0] index_t;
   typedef logic [TAG_BITS -1:0] tag_t;
 
+  /*
+   TODO: Find a better typedefinition for the data_t. This is the data being read by the
+   CPU. There is currently no byte selection.
+  */
+  typedef logic [CPU_DATA_WIDTH_IN_BYTES-1:0] data_t;  // 32 bits at the moment.
 
 endpackage
