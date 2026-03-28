@@ -24,7 +24,7 @@ function generateHeaders() {
 }
 
 # WARN: It attempts to generate vaweforms by default.
-function compileTestBench() {
+function buildTestbenchExecutable() {
   $COMPILER --cc $ALL_MODULES --exe $TEST_BENCH_CC -Mdir $TARGET_DIR --trace &&
     make -C $TARGET_DIR -f $TOP_LEVEL_MAKE CXX="$CXX" CXXFLAGS+="$FLAGS" &&
     echo "[SUCCESS]: Top level module ${TOP_LEVEL_MODULE} and test bench ${TEST_BENCH_CC} compiled successfully." &&
@@ -70,7 +70,7 @@ function main() {
     if [[ $# < 2 ]]; then
       usage
     fi
-    compileTestBench
+    buildTestbenchExecutable
     ;;
   *)
     usage
