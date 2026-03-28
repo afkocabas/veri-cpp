@@ -8,18 +8,18 @@ import CachePackage::*;
 // If a read and write occur in the same cycle to the same address,
 // the write takes priority and its data is forwarded to the read output.
 module Cache (
-    input logic res,
-    input logic clock,
-    input logic read_enable,
+    input logic rst_i,
+    input logic clk_i,
+    input logic read_en_i,
 
-    input address_t read_address,
-    input address_t write_address,
+    input address_t read_addr,
+    input address_t write_addr,
 
-    input logic  write_enable,
-    input word_t write_data,
+    input logic  write_en_i,
+    input word_t write_data_i,
 
-    output word_t read_data,
-    output logic  is_Hit
+    output word_t read_data_o,
+    output logic  is_hit_o
 );
 
   // Internal Blocks:  {
@@ -47,56 +47,56 @@ module Cache (
   // Assignments:     {
 
   // Read fields
-  assign rd_offset_in   = read_address[OFFSET_MSB:OFFSET_LSB];
-  assign rd_tag_in      = read_address[TAG_MSB:TAG_LSB];
-  assign rd_index_in    = read_address[INDEX_MSB:INDEX_LSB];
+  assign rd_offset_in   = read_addr[OFFSET_MSB:OFFSET_LSB];
+  assign rd_tag_in      = read_addr[TAG_MSB:TAG_LSB];
+  assign rd_index_in    = read_addr[INDEX_MSB:INDEX_LSB];
   assign rd_word_select = rd_offset_in[WORD_SELECT_MSB:WORD_SELECT_LSB];
 
   assign rdata          = data[rd_index_in];
 
   // Write fields
-  assign wr_offset_in   = write_address[OFFSET_MSB:OFFSET_LSB];
-  assign wr_tag_in      = write_address[TAG_MSB:TAG_LSB];
-  assign wr_index_in    = write_address[INDEX_MSB:INDEX_LSB];
+  assign wr_offset_in   = write_addr[OFFSET_MSB:OFFSET_LSB];
+  assign wr_tag_in      = write_addr[TAG_MSB:TAG_LSB];
+  assign wr_index_in    = write_addr[INDEX_MSB:INDEX_LSB];
   assign wr_word_select = wr_offset_in[WORD_SELECT_MSB:WORD_SELECT_LSB];
 
   // ---------------- }
 
 
-  always_ff @(posedge clock) begin : reading
+  always_ff @(posedge clk_i) begin : reading
     // Reset logic goes here
-    if (res) begin
-      is_Hit <= '0;
-      read_data <= '0;
+    if (rst_i) begin
+      is_hit_o <= '0;
+      read_data_o <= '0;
     end else begin
-      if (read_enable) begin
-        if (write_enable && write_address == read_address) begin : simultaneous_read_write
-          is_Hit <= 1;
-          read_data <= write_data;
+      if (read_en_i) begin
+        if (write_en_i && write_addr == read_addr) begin : simultaneous_read_write
+          is_hit_o <= 1;
+          read_data_o <= write_data_i;
         end else begin : only_read
           if (valid[rd_index_in] && (tag[rd_index_in] == rd_tag_in)) begin  // Cache hit
-            is_Hit <= 1;
-            read_data <= getWordFromCacheBlock(rdata, rd_word_select);
+            is_hit_o <= 1;
+            read_data_o <= getWordFromCacheBlock(rdata, rd_word_select);
           end else begin  // Cache miss.
-            is_Hit <= 0;
+            is_hit_o <= 0;
           end
         end
         // Clear output signals
       end else begin
-        is_Hit <= 0;
-        read_data <= '0;
+        is_hit_o <= 0;
+        read_data_o <= '0;
       end
     end
   end
 
-  always_ff @(posedge clock) begin : writing
-    if (res) begin
+  always_ff @(posedge clk_i) begin : writing
+    if (rst_i) begin
       valid <= '{default: 0};
       tag   <= '{default: 0};
       data  <= '{default: 0};
     end else begin
       // If write is enabled.
-      if (write_enable) begin
+      if (write_en_i) begin
         /*
         TODO: Simplified write-miss handling.
         On a write miss, this implementation allocates/overwrites the cache line locally,
@@ -112,10 +112,10 @@ module Cache (
             valid[wr_index_in] <= 1'b1;
 
             // Write the word
-            data[wr_index_in]  <= getNewBlock('0, wr_word_select, write_data);
+            data[wr_index_in]  <= getNewBlock('0, wr_word_select, write_data_i);
 
           end else begin  // Write hit, just adjust the corresponding word.
-            data[wr_index_in][wr_word_select*WORD_SIZE_IN_BITS+:WORD_SIZE_IN_BITS] <= write_data;
+            data[wr_index_in][wr_word_select*WORD_SIZE_IN_BITS+:WORD_SIZE_IN_BITS] <= write_data_i;
           end
         end else begin  // Write miss, invalidated cache line.
 
@@ -124,7 +124,7 @@ module Cache (
           valid[wr_index_in] <= 1'b1;
 
           // Write the word
-          data[wr_index_in]  <= getNewBlock('0, wr_word_select, write_data);
+          data[wr_index_in]  <= getNewBlock('0, wr_word_select, write_data_i);
 
         end
       end
