@@ -24,7 +24,6 @@ module Cache (
 
   // Internal Blocks:  {
   cacheblock_t  data           [NUM_OF_CACHE_LINES];
-  offset_t      offset         [NUM_OF_CACHE_LINES];
   tag_t         tag            [NUM_OF_CACHE_LINES];
   valid_t       valid          [NUM_OF_CACHE_LINES];
 
