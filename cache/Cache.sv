@@ -1,6 +1,6 @@
 import CachePackage::*;
 
-// Simple read-only direct mapped cache with 4 kB data capacity.
+// Simple direct-mapped cache.
 
 // The bus width is word_t, width of a word -- 32 in this implementation.
 
@@ -56,9 +56,9 @@ module Cache (
   assign rdata          = data[rd_index_in];
 
   // Write fields
-  assign wr_offset_in   = read_address[OFFSET_MSB:OFFSET_LSB];
-  assign wr_tag_in      = read_address[TAG_MSB:TAG_LSB];
-  assign wr_index_in    = read_address[INDEX_MSB:INDEX_LSB];
+  assign wr_offset_in   = write_address[OFFSET_MSB:OFFSET_LSB];
+  assign wr_tag_in      = write_address[TAG_MSB:TAG_LSB];
+  assign wr_index_in    = write_address[INDEX_MSB:INDEX_LSB];
   assign wr_word_select = wr_offset_in[WORD_SELECT_MSB:WORD_SELECT_LSB];
 
   // ---------------- }
