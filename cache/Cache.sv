@@ -1,11 +1,19 @@
 import CachePackage::*;
 
-// Simple read-only direct mapped cache with 4 kb data capacity.
+// Simple read-only direct mapped cache with 4 kB data capacity.
+
+// The bus width is word_t, width of a word -- 32 in this implementation.
+
+// The cache supports simultaneous read and write operations.
+// If a read and write occur in the same cycle to the same address,
+// the write takes priority and its data is forwarded to the read output.
 module Cache (
-    input logic     res,
-    input logic     clock,
-    input logic     read_enable,
-    input address_t address,
+    input logic res,
+    input logic clock,
+    input logic read_enable,
+
+    input address_t read_address,
+    input address_t write_address,
 
     input logic  write_enable,
     input word_t write_data,
@@ -14,45 +22,66 @@ module Cache (
     output logic  is_Hit
 );
 
-  // Internal Blocks:   {
-  cacheblock_t  data        [NUM_OF_CACHE_LINES];
-  offset_t      offset      [NUM_OF_CACHE_LINES];
-  tag_t         tag         [NUM_OF_CACHE_LINES];
-  valid_t       valid       [NUM_OF_CACHE_LINES];
+  // Internal Blocks:  {
+  cacheblock_t  data           [NUM_OF_CACHE_LINES];
+  offset_t      offset         [NUM_OF_CACHE_LINES];
+  tag_t         tag            [NUM_OF_CACHE_LINES];
+  valid_t       valid          [NUM_OF_CACHE_LINES];
 
-  offset_t      offset_in;
-  tag_t         tag_in;
-  index_t       index_in;
+  offset_t      rd_offset_in;
+  offset_t      wr_offset_in;
 
-  cacheblock_t  data_block;
+  tag_t         rd_tag_in;
+  tag_t         wr_tag_in;
+
+  index_t       rd_index_in;
+  index_t       wr_index_in;
+
+  word_select_t rd_word_select;
+  word_select_t wr_word_select;
+
+  cacheblock_t  rdata;
   cacheblock_t  new_block;
 
-  word_select_t word_select;
   // ------------------ }
 
-  // Assignments:    {
-  assign offset_in   = address[OFFSET_MSB:OFFSET_LSB];
-  assign tag_in      = address[TAG_MSB:TAG_LSB];
-  assign index_in    = address[INDEX_MSB:INDEX_LSB];
-  assign data_block  = data[index_in];
-  assign word_select = offset_in[WORD_SELECT_MSB:WORD_SELECT_LSB];
+  // Assignments:     {
 
-  // ----------------}
+  // Read fields
+  assign rd_offset_in   = read_address[OFFSET_MSB:OFFSET_LSB];
+  assign rd_tag_in      = read_address[TAG_MSB:TAG_LSB];
+  assign rd_index_in    = read_address[INDEX_MSB:INDEX_LSB];
+  assign rd_word_select = rd_offset_in[WORD_SELECT_MSB:WORD_SELECT_LSB];
+
+  assign rdata          = data[rd_index_in];
+
+  // Write fields
+  assign wr_offset_in   = read_address[OFFSET_MSB:OFFSET_LSB];
+  assign wr_tag_in      = read_address[TAG_MSB:TAG_LSB];
+  assign wr_index_in    = read_address[INDEX_MSB:INDEX_LSB];
+  assign wr_word_select = wr_offset_in[WORD_SELECT_MSB:WORD_SELECT_LSB];
+
+  // ---------------- }
 
 
   always_ff @(posedge clock) begin : reading
-    // Reset  logic goes here
+    // Reset logic goes here
     if (res) begin
       is_Hit <= '0;
       read_data <= '0;
       valid <= '{default: 0};
     end else begin
       if (read_enable) begin
-        if (valid[index_in] && (tag[index_in] == tag_in)) begin  // Cache hit
+        if (write_enable && write_address == read_address) begin : simultaneous_read_write
           is_Hit <= 1;
-          read_data <= getWordFromCacheBlock(data_block, word_select);
-        end else begin  // Cache miss.
-          is_Hit <= 0;
+          read_data <= write_data;
+        end else begin : only_read
+          if (valid[rd_index_in] && (tag[rd_index_in] == rd_tag_in)) begin  // Cache hit
+            is_Hit <= 1;
+            read_data <= getWordFromCacheBlock(rdata, rd_word_select);
+          end else begin  // Cache miss.
+            is_Hit <= 0;
+          end
         end
         // Clear output signals
       end else begin
@@ -64,8 +93,7 @@ module Cache (
   always_ff @(posedge clock) begin : writing
     if (res) begin
       is_Hit <= '0;
-      read_data <= '0;
-      valid <= '{default: 0};
+      valid  <= '{default: 0};
     end else begin
       // If write is enabled.
       if (write_enable) begin
@@ -75,28 +103,28 @@ module Cache (
         clears the line, and writes only the selected word, instead of fetching the full
         cache line from memory first.
         */
-        if (valid[index_in]) begin
+        if (valid[wr_index_in]) begin
 
-          if (tag[index_in] != tag_in) begin  // Write miss, tag mismatch.
+          if (tag[wr_index_in] != wr_tag_in) begin  // Write miss, tag mismatch.
 
             // Set meta data
-            tag[index_in]   <= tag_in;
-            valid[index_in] <= 1'b1;
+            tag[wr_index_in]   <= wr_tag_in;
+            valid[wr_index_in] <= 1'b1;
 
             // Write the word
-            data[index_in]  <= getNewBlock('0, word_select, write_data);
+            data[wr_index_in]  <= getNewBlock('0, wr_word_select, write_data);
 
           end else begin  // Write hit, just adjust the corresponding word.
-            data[index_in][word_select*WORD_SIZE_IN_BITS+:WORD_SIZE_IN_BITS] <= write_data;
+            data[wr_index_in][wr_word_select*WORD_SIZE_IN_BITS+:WORD_SIZE_IN_BITS] <= write_data;
           end
         end else begin  // Write miss, invalidated cache line.
 
           // Set meta data
-          tag[index_in]   <= tag_in;
-          valid[index_in] <= 1'b1;
+          tag[wr_index_in]   <= wr_tag_in;
+          valid[wr_index_in] <= 1'b1;
 
           // Write the word
-          data[index_in]  <= getNewBlock('0, word_select, write_data);
+          data[wr_index_in]  <= getNewBlock('0, wr_word_select, write_data);
 
         end
       end
