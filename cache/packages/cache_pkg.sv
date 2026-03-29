@@ -30,7 +30,7 @@ package cache_pkg;
   typedef logic [ADDRESS_SPACE_IN_BITS -1:0] address_t;  // 32 bits at the moment.
 
   typedef logic [OFFSET_BITS -1:0] offset_t;
-  typedef logic [INDEX_BITS -1:0] index_t;
+  typedef logic [INDEX_BITS -1:0] idx_t;
   typedef logic [TAG_BITS -1:0] tag_t;
   typedef logic valid_t;
   typedef logic [WORD_SIZE_IN_BITS-1:0] word_t;  // 32 bits at the moment.
