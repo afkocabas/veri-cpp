@@ -2,7 +2,7 @@ import cache_pkg::*;
 
 interface cache_mem_if (
     input clk,
-    input res
+    input rst
 );
 
 
@@ -20,6 +20,8 @@ interface cache_mem_if (
 
 
   modport master(
+      input clk,
+      input rst,
       output wr_en,
 
       output wr_tag,
@@ -35,6 +37,8 @@ interface cache_mem_if (
   );
 
   modport slave(
+      input clk,
+      input rst,
       input wr_en,
 
       input wr_tag,
