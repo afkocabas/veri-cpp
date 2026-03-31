@@ -1,4 +1,4 @@
-addrmap sumermcu_uart_reg {
+addrmap uart_regblock {
   name = "SumerMCU UART register block.";
 
   default regwidth = 32;
