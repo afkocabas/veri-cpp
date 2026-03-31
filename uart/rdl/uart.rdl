@@ -1,0 +1,66 @@
+addrmap sumermcu_uart_reg {
+  name = "SumerMCU UART register block.";
+
+  default regwidth = 32;
+
+  reg UART_CPB {
+    desc = "Clock-per-bit register. Used to set baud rate: BAUD = SYS_CLK / UART_CPB.";
+    field {
+      desc = "Clock per bit value for baud rate configuration";
+      sw = rw;
+      hw = r;
+    } cpb_value[31:0] = 0;
+  } CPB @0x00;
+
+  reg UART_STP {
+    desc = "Stop-bit register";
+    field {
+      desc = "Stop bit setting: 00=1 stop bit, 01=1.5 stop bits, 1X=2 stop bits";
+      sw = rw;
+      hw = r;
+    } stop_bits [31:0] = 0;
+  } STP @0x04;
+
+  reg UART_RDR {
+    desc = "Receiver Data Register. Holds the last received 8-bit data.";
+    field {
+      desc = "Byte recieved";
+      sw = r;
+      hw = rw;
+    } rx_data [7:0] = 0;
+  } RDR @0x08;
+
+  reg UART_TDR {
+    desc = "Transmitter Data Register. Holds the byte to be transmitted.";
+    field {
+      desc = "Byte transmitted";
+      sw = rw;
+      hw = r;
+    } tx_data [7:0] = 0;
+  } TDR @0x0C;
+
+  reg UART_CFG {
+    desc = "Configuration register.";
+    field {
+      desc = "Transmit enable bit.";
+      sw = rw;
+      hw = r;
+    } tx_en[0:0] = 0;
+
+    field {
+      desc = "Set by HW when new data is received. Cleared by SW.";
+      sw = rw;
+      hw = rw;
+    } rx_ready[1:1] = 0;
+
+    field {
+      desc = "Set by HW when transmission is complete. Cleared by SW.";
+      sw = rw;
+      hw = rw;
+      swmod;
+      precedence = sw;
+    } tx_done[2:2] = 0;
+  } CFG @ 0x10;
+
+};
+
