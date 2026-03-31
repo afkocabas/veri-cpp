@@ -1,4 +1,4 @@
-import sumermcu_uart_reg_pkg::*;
+import uart_regblock_pkg::*;
 
 module uart (
     input logic clk_i,
