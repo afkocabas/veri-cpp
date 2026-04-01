@@ -2,414 +2,540 @@
 //  https://github.com/SystemRDL/PeakRDL-regblock
 
 module uart_regblock (
-        input wire clk,
-        input wire rst,
+    input wire clk,
+    input wire rst,
 
-        apb3_intf.slave s_apb,
+    axi4lite_intf.slave s_axil,
 
-        input uart_regblock_pkg::uart_regblock__in_t hwif_in,
-        output uart_regblock_pkg::uart_regblock__out_t hwif_out
-    );
+    input  uart_regblock_pkg::uart_regblock__in_t  hwif_in,
+    output uart_regblock_pkg::uart_regblock__out_t hwif_out
+);
 
-    //--------------------------------------------------------------------------
-    // CPU Bus interface logic
-    //--------------------------------------------------------------------------
-    logic cpuif_req;
-    logic cpuif_req_is_wr;
-    logic [4:0] cpuif_addr;
-    logic [31:0] cpuif_wr_data;
-    logic [31:0] cpuif_wr_biten;
-    logic cpuif_req_stall_wr;
-    logic cpuif_req_stall_rd;
+  //--------------------------------------------------------------------------
+  // CPU Bus interface logic
+  //--------------------------------------------------------------------------
+  logic cpuif_req;
+  logic cpuif_req_is_wr;
+  logic [4:0] cpuif_addr;
+  logic [31:0] cpuif_wr_data;
+  logic [31:0] cpuif_wr_biten;
+  logic cpuif_req_stall_wr;
+  logic cpuif_req_stall_rd;
 
-    logic cpuif_rd_ack;
-    logic cpuif_rd_err;
-    logic [31:0] cpuif_rd_data;
+  logic cpuif_rd_ack;
+  logic cpuif_rd_err;
+  logic [31:0] cpuif_rd_data;
 
-    logic cpuif_wr_ack;
-    logic cpuif_wr_err;
+  logic cpuif_wr_ack;
+  logic cpuif_wr_err;
 
-    `ifndef SYNTHESIS
-        initial begin
-            assert_bad_addr_width: assert($bits(s_apb.PADDR) >= uart_regblock_pkg::UART_REGBLOCK_MIN_ADDR_WIDTH)
-                else $error("Interface address width of %0d is too small. Shall be at least %0d bits", $bits(s_apb.PADDR), uart_regblock_pkg::UART_REGBLOCK_MIN_ADDR_WIDTH);
-            assert_bad_data_width: assert($bits(s_apb.PWDATA) == uart_regblock_pkg::UART_REGBLOCK_DATA_WIDTH)
-                else $error("Interface data width of %0d is incorrect. Shall be %0d bits", $bits(s_apb.PWDATA), uart_regblock_pkg::UART_REGBLOCK_DATA_WIDTH);
-        end
-    `endif
+`ifndef SYNTHESIS
+  initial begin
+    assert_bad_addr_width :
+    assert ($bits(s_axil.ARADDR) >= uart_regblock_pkg::UART_REGBLOCK_MIN_ADDR_WIDTH)
+    else
+      $error(
+          "Interface address width of %0d is too small. Shall be at least %0d bits",
+          $bits(
+              s_axil.ARADDR
+          ),
+          uart_regblock_pkg::UART_REGBLOCK_MIN_ADDR_WIDTH
+      );
+    assert_bad_data_width :
+    assert ($bits(s_axil.WDATA) == uart_regblock_pkg::UART_REGBLOCK_DATA_WIDTH)
+    else
+      $error(
+          "Interface data width of %0d is incorrect. Shall be %0d bits",
+          $bits(
+              s_axil.WDATA
+          ),
+          uart_regblock_pkg::UART_REGBLOCK_DATA_WIDTH
+      );
+  end
+`endif
 
-    // Request
-    logic is_active;
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            is_active <= '0;
-            cpuif_req <= '0;
-            cpuif_req_is_wr <= '0;
-            cpuif_addr <= '0;
-            cpuif_wr_data <= '0;
-        end else begin
-            if(~is_active) begin
-                if(s_apb.PSEL) begin
-                    is_active <= '1;
-                    cpuif_req <= '1;
-                    cpuif_req_is_wr <= s_apb.PWRITE;
-                    cpuif_addr <= {s_apb.PADDR[4:2], 2'b0};
-                    cpuif_wr_data <= s_apb.PWDATA;
-                end
-            end else begin
-                cpuif_req <= '0;
-                if(cpuif_rd_ack || cpuif_wr_ack) begin
-                    is_active <= '0;
-                end
-            end
-        end
+  // Max Outstanding Transactions: 2
+  logic [1:0] axil_n_in_flight;
+  logic axil_prev_was_rd;
+  logic axil_arvalid;
+  logic [4:0] axil_araddr;
+  logic axil_ar_accept;
+  logic axil_awvalid;
+  logic [4:0] axil_awaddr;
+  logic axil_wvalid;
+  logic [31:0] axil_wdata;
+  logic [3:0] axil_wstrb;
+  logic axil_aw_accept;
+  logic axil_resp_acked;
+
+  // Transaction request acceptance
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      axil_prev_was_rd <= '0;
+      axil_arvalid <= '0;
+      axil_araddr <= '0;
+      axil_awvalid <= '0;
+      axil_awaddr <= '0;
+      axil_wvalid <= '0;
+      axil_wdata <= '0;
+      axil_wstrb <= '0;
+      axil_n_in_flight <= '0;
+    end else begin
+      // AR* acceptance register
+      if (axil_ar_accept) begin
+        axil_prev_was_rd <= '1;
+        axil_arvalid <= '0;
+      end
+      if (s_axil.ARVALID && s_axil.ARREADY) begin
+        axil_arvalid <= '1;
+        axil_araddr  <= s_axil.ARADDR;
+      end
+
+      // AW* & W* acceptance registers
+      if (axil_aw_accept) begin
+        axil_prev_was_rd <= '0;
+        axil_awvalid <= '0;
+        axil_wvalid <= '0;
+      end
+      if (s_axil.AWVALID && s_axil.AWREADY) begin
+        axil_awvalid <= '1;
+        axil_awaddr  <= s_axil.AWADDR;
+      end
+      if (s_axil.WVALID && s_axil.WREADY) begin
+        axil_wvalid <= '1;
+        axil_wdata  <= s_axil.WDATA;
+        axil_wstrb  <= s_axil.WSTRB;
+      end
+
+      // Keep track of in-flight transactions
+      if ((axil_ar_accept || axil_aw_accept) && !axil_resp_acked) begin
+        axil_n_in_flight <= axil_n_in_flight + 1'b1;
+      end else if (!(axil_ar_accept || axil_aw_accept) && axil_resp_acked) begin
+        axil_n_in_flight <= axil_n_in_flight - 1'b1;
+      end
     end
-    assign cpuif_wr_biten = '1;
+  end
 
-    // Response
-    assign s_apb.PREADY = cpuif_rd_ack | cpuif_wr_ack;
-    assign s_apb.PRDATA = cpuif_rd_data;
-    assign s_apb.PSLVERR = cpuif_rd_err | cpuif_wr_err;
+  always_comb begin
+    s_axil.ARREADY = (!axil_arvalid || axil_ar_accept);
+    s_axil.AWREADY = (!axil_awvalid || axil_aw_accept);
+    s_axil.WREADY  = (!axil_wvalid || axil_aw_accept);
+  end
 
-    logic cpuif_req_masked;
+  // Request dispatch
+  always_comb begin
+    cpuif_wr_data = axil_wdata;
+    for (int i = 0; i < 4; i++) begin
+      cpuif_wr_biten[i*8+:8] = {8{axil_wstrb[i]}};
+    end
+    cpuif_req = '0;
+    cpuif_req_is_wr = '0;
+    cpuif_addr = '0;
+    axil_ar_accept = '0;
+    axil_aw_accept = '0;
 
-    // Read & write latencies are balanced. Stalls not required
-    assign cpuif_req_stall_rd = '0;
-    assign cpuif_req_stall_wr = '0;
-    assign cpuif_req_masked = cpuif_req
+    if (axil_n_in_flight < 2'd2) begin
+      // Can safely issue more transactions without overwhelming response buffer
+      if (axil_arvalid && !axil_prev_was_rd) begin
+        cpuif_req = '1;
+        cpuif_req_is_wr = '0;
+        cpuif_addr = {axil_araddr[4:2], 2'b0};
+        if (!cpuif_req_stall_rd) axil_ar_accept = '1;
+      end else if (axil_awvalid && axil_wvalid) begin
+        cpuif_req = '1;
+        cpuif_req_is_wr = '1;
+        cpuif_addr = {axil_awaddr[4:2], 2'b0};
+        if (!cpuif_req_stall_wr) axil_aw_accept = '1;
+      end else if (axil_arvalid) begin
+        cpuif_req = '1;
+        cpuif_req_is_wr = '0;
+        cpuif_addr = {axil_araddr[4:2], 2'b0};
+        if (!cpuif_req_stall_rd) axil_ar_accept = '1;
+      end
+    end
+  end
+
+
+  // AXI4-Lite Response Logic
+  logic axil_resp_buffer_is_wr[2];
+  logic axil_resp_buffer_err[2];
+  logic [31:0] axil_resp_buffer_rdata[2];
+
+  logic [1:0] axil_resp_wptr;
+  logic [1:0] axil_resp_rptr;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      for (int i = 0; i < 2; i++) begin
+        axil_resp_buffer_is_wr[i] <= '0;
+        axil_resp_buffer_err[i]   <= '0;
+        axil_resp_buffer_rdata[i] <= '0;
+      end
+      axil_resp_wptr <= '0;
+      axil_resp_rptr <= '0;
+    end else begin
+      // Store responses in buffer until AXI response channel accepts them
+      if (cpuif_rd_ack || cpuif_wr_ack) begin
+        if (cpuif_rd_ack) begin
+          axil_resp_buffer_is_wr[axil_resp_wptr[0:0]] <= '0;
+          axil_resp_buffer_err[axil_resp_wptr[0:0]]   <= cpuif_rd_err;
+          axil_resp_buffer_rdata[axil_resp_wptr[0:0]] <= cpuif_rd_data;
+
+        end else if (cpuif_wr_ack) begin
+          axil_resp_buffer_is_wr[axil_resp_wptr[0:0]] <= '1;
+          axil_resp_buffer_err[axil_resp_wptr[0:0]]   <= cpuif_wr_err;
+        end
+        axil_resp_wptr <= axil_resp_wptr + 1'b1;
+      end
+
+      // Advance read pointer when acknowledged
+      if (axil_resp_acked) begin
+        axil_resp_rptr <= axil_resp_rptr + 1'b1;
+      end
+    end
+  end
+
+  always_comb begin
+    axil_resp_acked = '0;
+    s_axil.BVALID   = '0;
+    s_axil.RVALID   = '0;
+    if (axil_resp_rptr != axil_resp_wptr) begin
+      if (axil_resp_buffer_is_wr[axil_resp_rptr[0:0]]) begin
+        s_axil.BVALID = '1;
+        if (s_axil.BREADY) axil_resp_acked = '1;
+      end else begin
+        s_axil.RVALID = '1;
+        if (s_axil.RREADY) axil_resp_acked = '1;
+      end
+    end
+
+    s_axil.RDATA = axil_resp_buffer_rdata[axil_resp_rptr[0:0]];
+    if (axil_resp_buffer_err[axil_resp_rptr[0:0]]) begin
+      s_axil.BRESP = 2'b10;
+      s_axil.RRESP = 2'b10;
+    end else begin
+      s_axil.BRESP = 2'b00;
+      s_axil.RRESP = 2'b00;
+    end
+  end
+
+  logic cpuif_req_masked;
+
+  // Read & write latencies are balanced. Stalls not required
+  assign cpuif_req_stall_rd = '0;
+  assign cpuif_req_stall_wr = '0;
+  assign cpuif_req_masked = cpuif_req
                             & !(!cpuif_req_is_wr & cpuif_req_stall_rd)
                             & !(cpuif_req_is_wr & cpuif_req_stall_wr);
 
-    //--------------------------------------------------------------------------
-    // Address Decode
-    //--------------------------------------------------------------------------
-    typedef struct {
-        logic CPB;
-        logic STP;
-        logic RDR;
-        logic TDR;
-        logic CFG;
-    } decoded_reg_strb_t;
-    decoded_reg_strb_t decoded_reg_strb;
-    logic decoded_err;
-    logic [4:0] decoded_addr;
-    logic decoded_req;
-    logic decoded_req_is_wr;
-    logic [31:0] decoded_wr_data;
-    logic [31:0] decoded_wr_biten;
+  //--------------------------------------------------------------------------
+  // Address Decode
+  //--------------------------------------------------------------------------
+  typedef struct {
+    logic CPB;
+    logic STP;
+    logic RDR;
+    logic TDR;
+    logic CFG;
+  } decoded_reg_strb_t;
+  decoded_reg_strb_t decoded_reg_strb;
+  logic decoded_err;
+  logic [4:0] decoded_addr;
+  logic decoded_req;
+  logic decoded_req_is_wr;
+  logic [31:0] decoded_wr_data;
+  logic [31:0] decoded_wr_biten;
 
-    always_comb begin
-        automatic logic is_valid_addr;
-        automatic logic is_valid_rw;
-        is_valid_addr = '1; // No valid address check
-        is_valid_rw = '1; // No valid RW check
-        decoded_reg_strb.CPB = cpuif_req_masked & (cpuif_addr == 5'h0);
-        decoded_reg_strb.STP = cpuif_req_masked & (cpuif_addr == 5'h4);
-        decoded_reg_strb.RDR = cpuif_req_masked & (cpuif_addr == 5'h8) & !cpuif_req_is_wr;
-        decoded_reg_strb.TDR = cpuif_req_masked & (cpuif_addr == 5'hc);
-        decoded_reg_strb.CFG = cpuif_req_masked & (cpuif_addr == 5'h10);
-        decoded_err = '0;
-    end
+  always_comb begin
+    automatic logic is_valid_addr;
+    automatic logic is_valid_rw;
+    is_valid_addr = '1;  // No valid address check
+    is_valid_rw = '1;  // No valid RW check
+    decoded_reg_strb.CPB = cpuif_req_masked & (cpuif_addr == 5'h0);
+    decoded_reg_strb.STP = cpuif_req_masked & (cpuif_addr == 5'h4);
+    decoded_reg_strb.RDR = cpuif_req_masked & (cpuif_addr == 5'h8) & !cpuif_req_is_wr;
+    decoded_reg_strb.TDR = cpuif_req_masked & (cpuif_addr == 5'hc);
+    decoded_reg_strb.CFG = cpuif_req_masked & (cpuif_addr == 5'h10);
+    decoded_err = '0;
+  end
 
-    // Pass down signals to next stage
-    assign decoded_addr = cpuif_addr;
-    assign decoded_req = cpuif_req_masked;
-    assign decoded_req_is_wr = cpuif_req_is_wr;
-    assign decoded_wr_data = cpuif_wr_data;
-    assign decoded_wr_biten = cpuif_wr_biten;
+  // Pass down signals to next stage
+  assign decoded_addr = cpuif_addr;
+  assign decoded_req = cpuif_req_masked;
+  assign decoded_req_is_wr = cpuif_req_is_wr;
+  assign decoded_wr_data = cpuif_wr_data;
+  assign decoded_wr_biten = cpuif_wr_biten;
 
-    //--------------------------------------------------------------------------
-    // Field logic
-    //--------------------------------------------------------------------------
-    typedef struct {
-        struct {
-            struct {
-                logic [31:0] next;
-                logic load_next;
-            } cpb_value;
-        } CPB;
-        struct {
-            struct {
-                logic [31:0] next;
-                logic load_next;
-            } stop_bits;
-        } STP;
-        struct {
-            struct {
-                logic [7:0] next;
-                logic load_next;
-            } rx_data;
-        } RDR;
-        struct {
-            struct {
-                logic [7:0] next;
-                logic load_next;
-            } tx_data;
-        } TDR;
-        struct {
-            struct {
-                logic next;
-                logic load_next;
-            } tx_en;
-            struct {
-                logic next;
-                logic load_next;
-            } rx_ready;
-            struct {
-                logic next;
-                logic load_next;
-            } tx_done;
-        } CFG;
-    } field_combo_t;
-    field_combo_t field_combo;
+  //--------------------------------------------------------------------------
+  // Field logic
+  //--------------------------------------------------------------------------
+  typedef struct {
+    struct {
+      struct {
+        logic [31:0] next;
+        logic load_next;
+      } cpb_value;
+    } CPB;
+    struct {
+      struct {
+        logic [31:0] next;
+        logic load_next;
+      } stop_bits;
+    } STP;
+    struct {
+      struct {
+        logic [7:0] next;
+        logic load_next;
+      } rx_data;
+    } RDR;
+    struct {
+      struct {
+        logic [7:0] next;
+        logic load_next;
+      } tx_data;
+    } TDR;
+    struct {
+      struct {
+        logic next;
+        logic load_next;
+      } tx_en;
+      struct {
+        logic next;
+        logic load_next;
+      } rx_ready;
+      struct {
+        logic next;
+        logic load_next;
+      } tx_done;
+    } CFG;
+  } field_combo_t;
+  field_combo_t field_combo;
 
-    typedef struct {
-        struct {
-            struct {
-                logic [31:0] value;
-            } cpb_value;
-        } CPB;
-        struct {
-            struct {
-                logic [31:0] value;
-            } stop_bits;
-        } STP;
-        struct {
-            struct {
-                logic [7:0] value;
-            } rx_data;
-        } RDR;
-        struct {
-            struct {
-                logic [7:0] value;
-            } tx_data;
-        } TDR;
-        struct {
-            struct {
-                logic value;
-            } tx_en;
-            struct {
-                logic value;
-            } rx_ready;
-            struct {
-                logic value;
-            } tx_done;
-        } CFG;
-    } field_storage_t;
-    field_storage_t field_storage;
+  typedef struct {
+    struct {struct {logic [31:0] value;} cpb_value;} CPB;
+    struct {struct {logic [31:0] value;} stop_bits;} STP;
+    struct {struct {logic [7:0] value;} rx_data;} RDR;
+    struct {struct {logic [7:0] value;} tx_data;} TDR;
+    struct {
+      struct {logic value;} tx_en;
+      struct {logic value;} rx_ready;
+      struct {logic value;} tx_done;
+    } CFG;
+  } field_storage_t;
+  field_storage_t field_storage;
 
-    // Field: uart_regblock.CPB.cpb_value
-    always_comb begin
-        automatic logic [31:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.CPB.cpb_value.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.CPB && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.CPB.cpb_value.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
-            load_next_c = '1;
-        end
-        field_combo.CPB.cpb_value.next = next_c;
-        field_combo.CPB.cpb_value.load_next = load_next_c;
+  // Field: uart_regblock.CPB.cpb_value
+  always_comb begin
+    automatic logic [31:0] next_c;
+    automatic logic load_next_c;
+    next_c = field_storage.CPB.cpb_value.value;
+    load_next_c = '0;
+    if (decoded_reg_strb.CPB && decoded_req_is_wr) begin  // SW write
+      next_c = (field_storage.CPB.cpb_value.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
+      load_next_c = '1;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.CPB.cpb_value.value <= 32'h0;
-        end else begin
-            if(field_combo.CPB.cpb_value.load_next) begin
-                field_storage.CPB.cpb_value.value <= field_combo.CPB.cpb_value.next;
-            end
-        end
+    field_combo.CPB.cpb_value.next = next_c;
+    field_combo.CPB.cpb_value.load_next = load_next_c;
+  end
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      field_storage.CPB.cpb_value.value <= 32'h0;
+    end else begin
+      if (field_combo.CPB.cpb_value.load_next) begin
+        field_storage.CPB.cpb_value.value <= field_combo.CPB.cpb_value.next;
+      end
     end
-    assign hwif_out.CPB.cpb_value.value = field_storage.CPB.cpb_value.value;
-    // Field: uart_regblock.STP.stop_bits
-    always_comb begin
-        automatic logic [31:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.STP.stop_bits.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.STP && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.STP.stop_bits.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
-            load_next_c = '1;
-        end
-        field_combo.STP.stop_bits.next = next_c;
-        field_combo.STP.stop_bits.load_next = load_next_c;
+  end
+  assign hwif_out.CPB.cpb_value.value = field_storage.CPB.cpb_value.value;
+  // Field: uart_regblock.STP.stop_bits
+  always_comb begin
+    automatic logic [31:0] next_c;
+    automatic logic load_next_c;
+    next_c = field_storage.STP.stop_bits.value;
+    load_next_c = '0;
+    if (decoded_reg_strb.STP && decoded_req_is_wr) begin  // SW write
+      next_c = (field_storage.STP.stop_bits.value & ~decoded_wr_biten[31:0]) | (decoded_wr_data[31:0] & decoded_wr_biten[31:0]);
+      load_next_c = '1;
     end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.STP.stop_bits.value <= 32'h0;
-        end else begin
-            if(field_combo.STP.stop_bits.load_next) begin
-                field_storage.STP.stop_bits.value <= field_combo.STP.stop_bits.next;
-            end
-        end
+    field_combo.STP.stop_bits.next = next_c;
+    field_combo.STP.stop_bits.load_next = load_next_c;
+  end
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      field_storage.STP.stop_bits.value <= 32'h0;
+    end else begin
+      if (field_combo.STP.stop_bits.load_next) begin
+        field_storage.STP.stop_bits.value <= field_combo.STP.stop_bits.next;
+      end
     end
-    assign hwif_out.STP.stop_bits.value = field_storage.STP.stop_bits.value;
-    // Field: uart_regblock.RDR.rx_data
-    always_comb begin
-        automatic logic [7:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.RDR.rx_data.value;
-        load_next_c = '0;
-        
-        // HW Write
-        next_c = hwif_in.RDR.rx_data.next;
-        load_next_c = '1;
-        field_combo.RDR.rx_data.next = next_c;
-        field_combo.RDR.rx_data.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.RDR.rx_data.value <= 8'h0;
-        end else begin
-            if(field_combo.RDR.rx_data.load_next) begin
-                field_storage.RDR.rx_data.value <= field_combo.RDR.rx_data.next;
-            end
-        end
-    end
-    assign hwif_out.RDR.rx_data.value = field_storage.RDR.rx_data.value;
-    // Field: uart_regblock.TDR.tx_data
-    always_comb begin
-        automatic logic [7:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TDR.tx_data.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TDR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TDR.tx_data.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
-            load_next_c = '1;
-        end
-        field_combo.TDR.tx_data.next = next_c;
-        field_combo.TDR.tx_data.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TDR.tx_data.value <= 8'h0;
-        end else begin
-            if(field_combo.TDR.tx_data.load_next) begin
-                field_storage.TDR.tx_data.value <= field_combo.TDR.tx_data.next;
-            end
-        end
-    end
-    assign hwif_out.TDR.tx_data.value = field_storage.TDR.tx_data.value;
-    // Field: uart_regblock.CFG.tx_en
-    always_comb begin
-        automatic logic [0:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.CFG.tx_en.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.CFG && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.CFG.tx_en.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
-            load_next_c = '1;
-        end
-        field_combo.CFG.tx_en.next = next_c;
-        field_combo.CFG.tx_en.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.CFG.tx_en.value <= 1'h0;
-        end else begin
-            if(field_combo.CFG.tx_en.load_next) begin
-                field_storage.CFG.tx_en.value <= field_combo.CFG.tx_en.next;
-            end
-        end
-    end
-    assign hwif_out.CFG.tx_en.value = field_storage.CFG.tx_en.value;
-    // Field: uart_regblock.CFG.rx_ready
-    always_comb begin
-        automatic logic [0:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.CFG.rx_ready.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.CFG && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.CFG.rx_ready.value & ~decoded_wr_biten[1:1]) | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
-            load_next_c = '1;
-        end else begin // HW Write
-            next_c = hwif_in.CFG.rx_ready.next;
-            load_next_c = '1;
-        end
-        field_combo.CFG.rx_ready.next = next_c;
-        field_combo.CFG.rx_ready.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.CFG.rx_ready.value <= 1'h0;
-        end else begin
-            if(field_combo.CFG.rx_ready.load_next) begin
-                field_storage.CFG.rx_ready.value <= field_combo.CFG.rx_ready.next;
-            end
-        end
-    end
-    assign hwif_out.CFG.rx_ready.value = field_storage.CFG.rx_ready.value;
-    // Field: uart_regblock.CFG.tx_done
-    always_comb begin
-        automatic logic [0:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.CFG.tx_done.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.CFG && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.CFG.tx_done.value & ~decoded_wr_biten[2:2]) | (decoded_wr_data[2:2] & decoded_wr_biten[2:2]);
-            load_next_c = '1;
-        end else begin // HW Write
-            next_c = hwif_in.CFG.tx_done.next;
-            load_next_c = '1;
-        end
-        field_combo.CFG.tx_done.next = next_c;
-        field_combo.CFG.tx_done.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.CFG.tx_done.value <= 1'h0;
-        end else begin
-            if(field_combo.CFG.tx_done.load_next) begin
-                field_storage.CFG.tx_done.value <= field_combo.CFG.tx_done.next;
-            end
-        end
-    end
-    assign hwif_out.CFG.tx_done.value = field_storage.CFG.tx_done.value;
-    assign hwif_out.CFG.tx_done.swmod = decoded_reg_strb.CFG && decoded_req_is_wr && |(decoded_wr_biten[2:2]);
+  end
+  assign hwif_out.STP.stop_bits.value = field_storage.STP.stop_bits.value;
+  // Field: uart_regblock.RDR.rx_data
+  always_comb begin
+    automatic logic [7:0] next_c;
+    automatic logic load_next_c;
+    next_c = field_storage.RDR.rx_data.value;
+    load_next_c = '0;
 
-    //--------------------------------------------------------------------------
-    // Write response
-    //--------------------------------------------------------------------------
-    assign cpuif_wr_ack = decoded_req & decoded_req_is_wr;
-    // Writes are always granted with no error response
-    assign cpuif_wr_err = '0;
-
-    //--------------------------------------------------------------------------
-    // Readback
-    //--------------------------------------------------------------------------
-
-    logic [4:0] rd_mux_addr;
-    assign rd_mux_addr = decoded_addr;
-
-    logic readback_err;
-    logic readback_done;
-    logic [31:0] readback_data;
-    always_comb begin
-        automatic logic [31:0] readback_data_var;
-        readback_data_var = '0;
-        if(rd_mux_addr == 5'h0) begin
-            readback_data_var[31:0] = field_storage.CPB.cpb_value.value;
-        end
-        if(rd_mux_addr == 5'h4) begin
-            readback_data_var[31:0] = field_storage.STP.stop_bits.value;
-        end
-        if(rd_mux_addr == 5'h8) begin
-            readback_data_var[7:0] = field_storage.RDR.rx_data.value;
-        end
-        if(rd_mux_addr == 5'hc) begin
-            readback_data_var[7:0] = field_storage.TDR.tx_data.value;
-        end
-        if(rd_mux_addr == 5'h10) begin
-            readback_data_var[0] = field_storage.CFG.tx_en.value;
-            readback_data_var[1] = field_storage.CFG.rx_ready.value;
-            readback_data_var[2] = field_storage.CFG.tx_done.value;
-        end
-        readback_data = readback_data_var;
-        readback_done = decoded_req & ~decoded_req_is_wr;
-        readback_err = '0;
+    // HW Write
+    next_c = hwif_in.RDR.rx_data.next;
+    load_next_c = '1;
+    field_combo.RDR.rx_data.next = next_c;
+    field_combo.RDR.rx_data.load_next = load_next_c;
+  end
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      field_storage.RDR.rx_data.value <= 8'h0;
+    end else begin
+      if (field_combo.RDR.rx_data.load_next) begin
+        field_storage.RDR.rx_data.value <= field_combo.RDR.rx_data.next;
+      end
     end
+  end
+  assign hwif_out.RDR.rx_data.value = field_storage.RDR.rx_data.value;
+  // Field: uart_regblock.TDR.tx_data
+  always_comb begin
+    automatic logic [7:0] next_c;
+    automatic logic load_next_c;
+    next_c = field_storage.TDR.tx_data.value;
+    load_next_c = '0;
+    if (decoded_reg_strb.TDR && decoded_req_is_wr) begin  // SW write
+      next_c = (field_storage.TDR.tx_data.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+      load_next_c = '1;
+    end
+    field_combo.TDR.tx_data.next = next_c;
+    field_combo.TDR.tx_data.load_next = load_next_c;
+  end
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      field_storage.TDR.tx_data.value <= 8'h0;
+    end else begin
+      if (field_combo.TDR.tx_data.load_next) begin
+        field_storage.TDR.tx_data.value <= field_combo.TDR.tx_data.next;
+      end
+    end
+  end
+  assign hwif_out.TDR.tx_data.value = field_storage.TDR.tx_data.value;
+  // Field: uart_regblock.CFG.tx_en
+  always_comb begin
+    automatic logic [0:0] next_c;
+    automatic logic load_next_c;
+    next_c = field_storage.CFG.tx_en.value;
+    load_next_c = '0;
+    if (decoded_reg_strb.CFG && decoded_req_is_wr) begin  // SW write
+      next_c = (field_storage.CFG.tx_en.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
+      load_next_c = '1;
+    end
+    field_combo.CFG.tx_en.next = next_c;
+    field_combo.CFG.tx_en.load_next = load_next_c;
+  end
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      field_storage.CFG.tx_en.value <= 1'h0;
+    end else begin
+      if (field_combo.CFG.tx_en.load_next) begin
+        field_storage.CFG.tx_en.value <= field_combo.CFG.tx_en.next;
+      end
+    end
+  end
+  assign hwif_out.CFG.tx_en.value = field_storage.CFG.tx_en.value;
+  // Field: uart_regblock.CFG.rx_ready
+  always_comb begin
+    automatic logic [0:0] next_c;
+    automatic logic load_next_c;
+    next_c = field_storage.CFG.rx_ready.value;
+    load_next_c = '0;
+    if (decoded_reg_strb.CFG && decoded_req_is_wr) begin  // SW write
+      next_c = (field_storage.CFG.rx_ready.value & ~decoded_wr_biten[1:1]) | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
+      load_next_c = '1;
+    end else begin  // HW Write
+      next_c = hwif_in.CFG.rx_ready.next;
+      load_next_c = '1;
+    end
+    field_combo.CFG.rx_ready.next = next_c;
+    field_combo.CFG.rx_ready.load_next = load_next_c;
+  end
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      field_storage.CFG.rx_ready.value <= 1'h0;
+    end else begin
+      if (field_combo.CFG.rx_ready.load_next) begin
+        field_storage.CFG.rx_ready.value <= field_combo.CFG.rx_ready.next;
+      end
+    end
+  end
+  assign hwif_out.CFG.rx_ready.value = field_storage.CFG.rx_ready.value;
+  // Field: uart_regblock.CFG.tx_done
+  always_comb begin
+    automatic logic [0:0] next_c;
+    automatic logic load_next_c;
+    next_c = field_storage.CFG.tx_done.value;
+    load_next_c = '0;
+    if (decoded_reg_strb.CFG && decoded_req_is_wr) begin  // SW write
+      next_c = (field_storage.CFG.tx_done.value & ~decoded_wr_biten[2:2]) | (decoded_wr_data[2:2] & decoded_wr_biten[2:2]);
+      load_next_c = '1;
+    end else begin  // HW Write
+      next_c = hwif_in.CFG.tx_done.next;
+      load_next_c = '1;
+    end
+    field_combo.CFG.tx_done.next = next_c;
+    field_combo.CFG.tx_done.load_next = load_next_c;
+  end
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      field_storage.CFG.tx_done.value <= 1'h0;
+    end else begin
+      if (field_combo.CFG.tx_done.load_next) begin
+        field_storage.CFG.tx_done.value <= field_combo.CFG.tx_done.next;
+      end
+    end
+  end
+  assign hwif_out.CFG.tx_done.value = field_storage.CFG.tx_done.value;
+  assign hwif_out.CFG.tx_done.swmod = decoded_reg_strb.CFG && decoded_req_is_wr && |(decoded_wr_biten[2:2]);
 
-    assign cpuif_rd_ack = readback_done;
-    assign cpuif_rd_data = readback_data;
-    assign cpuif_rd_err = readback_err;
+  //--------------------------------------------------------------------------
+  // Write response
+  //--------------------------------------------------------------------------
+  assign cpuif_wr_ack = decoded_req & decoded_req_is_wr;
+  // Writes are always granted with no error response
+  assign cpuif_wr_err = '0;
+
+  //--------------------------------------------------------------------------
+  // Readback
+  //--------------------------------------------------------------------------
+
+  logic [4:0] rd_mux_addr;
+  assign rd_mux_addr = decoded_addr;
+
+  logic readback_err;
+  logic readback_done;
+  logic [31:0] readback_data;
+  always_comb begin
+    automatic logic [31:0] readback_data_var;
+    readback_data_var = '0;
+    if (rd_mux_addr == 5'h0) begin
+      readback_data_var[31:0] = field_storage.CPB.cpb_value.value;
+    end
+    if (rd_mux_addr == 5'h4) begin
+      readback_data_var[31:0] = field_storage.STP.stop_bits.value;
+    end
+    if (rd_mux_addr == 5'h8) begin
+      readback_data_var[7:0] = field_storage.RDR.rx_data.value;
+    end
+    if (rd_mux_addr == 5'hc) begin
+      readback_data_var[7:0] = field_storage.TDR.tx_data.value;
+    end
+    if (rd_mux_addr == 5'h10) begin
+      readback_data_var[0] = field_storage.CFG.tx_en.value;
+      readback_data_var[1] = field_storage.CFG.rx_ready.value;
+      readback_data_var[2] = field_storage.CFG.tx_done.value;
+    end
+    readback_data = readback_data_var;
+    readback_done = decoded_req & ~decoded_req_is_wr;
+    readback_err  = '0;
+  end
+
+  assign cpuif_rd_ack  = readback_done;
+  assign cpuif_rd_data = readback_data;
+  assign cpuif_rd_err  = readback_err;
 endmodule
