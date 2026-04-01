@@ -22,6 +22,7 @@ module uart_tx (
   // Internal registers and next state signals
   tx_state_t state_q, state_d;
   bit_idx_t bit_idx_q, bit_idx_d;
+  data_t data_q, data_d;
 
   logic [31:0] cpb_counter_q, cpb_counter_d;
 
@@ -110,7 +111,7 @@ module uart_tx (
         end
       end
       DATA_TRANSMISSION: begin
-        if (cpb_counter_q == cpb_i - 1 && bit_idx_q == DATA_WIDTH - 1) begin
+        if (cpb_counter_q == cpb_i - 1 && bit_idx_q == '1) begin
           state_d = TRANSMISSION_END;
         end
       end

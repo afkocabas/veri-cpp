@@ -1,6 +1,10 @@
 package uart_pkg;
 
-  typedef logic [7:0] data_t;
+  parameter int DATA_W = 8;
+
+  typedef logic [DATA_W - 1:0] data_t;
+  typedef logic [31:0] cpb_t;
+
   typedef enum {
     IDLE,
     TRANSMISSION_START,
@@ -9,14 +13,22 @@ package uart_pkg;
     WAIT_ACK
   } tx_state_t;
 
+  typedef enum {
+    RX_IDLE,
+    RECIEVE_START,
+    DATA_RECIEVE,
+    RECIEVE_STOP,
+    RX_WAIT_ACK
+  } rx_state_t;
+
   // Parameters
   parameter logic START_BIT = 0;
   parameter logic STOP_BIT = 1;
-  parameter int DATA_WIDTH = $bits(data_t);
 
   // Number of bits required for counter
-  parameter int COUNTER_BITS = $clog2(DATA_WIDTH);
+  parameter int CNT_NBITS = $clog2(DATA_W);
 
-  typedef logic [COUNTER_BITS - 1:0] bit_idx_t;
+  typedef logic [CNT_NBITS - 1:0] bit_idx_t;
+  typedef logic [CNT_NBITS - 1:0] bit_cnt_t;
 
 endpackage
