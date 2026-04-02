@@ -7,6 +7,7 @@ export CC=gcc-14
 # Flags to be passed to the c++ compiler used by verilator
 COMPILER=verilator
 FLAGS=" -std=c++23"
+VERILATOR_FLAGS=" --Wno-WIDTHTRUNC --Wno-MULTIDRIVEN "
 TARGET_DIR="obj_dir"
 
 # Parsing the parameters passed.
@@ -19,13 +20,13 @@ function usage() {
 
 # Creates .h and .cpp files
 function generateHeaders() {
-  $COMPILER --cc $ALL_MODULES --top-module $BASE_NAME &&
+  $COMPILER $VERILATOR_FLAGS --cc $ALL_MODULES --top-module $BASE_NAME &&
     echo "[SUCCESS]: Headers generated successfully."
 }
 
 # WARN: It attempts to generate vaweforms by default.
 function buildTestbenchExecutable() {
-  $COMPILER --cc $ALL_MODULES --top-module $BASE_NAME --exe $TEST_BENCH_CC -Mdir $TARGET_DIR --trace &&
+  $COMPILER $VERILATOR_FLAGS --cc $ALL_MODULES --top-module $BASE_NAME --exe $TEST_BENCH_CC -Mdir $TARGET_DIR --trace &&
     make -C $TARGET_DIR -f $TOP_LEVEL_MAKE CXX="$CXX" CXXFLAGS+="$FLAGS" &&
     echo "[SUCCESS]: Top level module ${TOP_LEVEL_MODULE} and test bench ${TEST_BENCH_CC} compiled successfully." &&
     echo "[SUCCESS]: Executable ${EXE} emitted."
