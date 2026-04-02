@@ -6,7 +6,6 @@ module uart_tx (
     input logic start_i,
     input data_t data_i,
     input logic [31:0] cpb_i,
-    input logic [31:0] cps_i,
     input logic done_ack_i,
 
     output logic busy_o,
