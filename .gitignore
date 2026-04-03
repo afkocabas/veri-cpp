@@ -1,5 +1,6 @@
 # Files
 *.vcd
+verible.filelist
 
 # Dirs
 obj_dir
