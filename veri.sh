@@ -14,7 +14,10 @@ TARGET_DIR="obj_dir"
 
 # Usage function
 function usage() {
-  echo "[USAGE]: ${0} [\"0 TOP_LEVEL_MODULE\" to generate headers | \"1 TOP_LEVEL_MODULE TEST_BENCH_CC\" to get final executable]"
+  echo "Usage:"
+  echo "  $0 gen   src1.sv src2.sv top.sv"
+  echo "  $0 build src1.sv src2.sv top.sv tb.cpp"
+  echo "  $0 clean"
   exit 1
 }
 
@@ -41,10 +44,10 @@ function parseArguments() {
   TOP_LEVEL_MODULE=""
   ALL_MODULES=""
 
-  if [[ $OPTION == 0 ]]; then
+  if [[ $OPTION == gen ]]; then
     TOP_LEVEL_MODULE="${args[$NUM_PARAMETERS-1]}"
     ALL_MODULES="${args[@]:1}"
-  else
+  elif [[ $OPTION == build ]]; then
     TOP_LEVEL_MODULE="${args[$NUM_PARAMETERS-2]}"
     ALL_MODULES=("${args[@]:1:${#args[@]}-2}")
   fi
@@ -62,16 +65,18 @@ function main() {
 
   case "$OPTION" in
   gen)
-    if [[ $# < 1 ]]; then
-      usage
-    fi
+    [[ $# < 1 ]] && usage
+
     generateHeaders
     ;;
   build)
-    if [[ $# < 2 ]]; then
-      usage
-    fi
+    [[ $# < 2 ]] && usage
+
     buildTestbenchExecutable
+    ;;
+  clean)
+
+    rm -rf obj_dir *.vcd
     ;;
   *)
     usage
