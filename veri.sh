@@ -15,10 +15,17 @@ TARGET_DIR="obj_dir"
 # Usage function
 function usage() {
   echo "Usage:"
-  echo "  $0 gen   src1.sv src2.sv top.sv"
-  echo "  $0 build src1.sv src2.sv top.sv tb.cpp"
-  echo "  $0 clean"
+  echo "Help:                       $0 help|h"
+  echo "Generate verible.filelist:  $0 verible"
+  echo "Generate Headers:           $0 gen   src1.sv src2.sv top.sv"
+  echo "Build with Testbench:       $0 build src1.sv src2.sv top.sv tb.cpp"
+  echo "Clean Output Files.         $0 clean"
   exit 1
+}
+
+function createVeribleList() {
+  find . -type f -name "*.sv" >verible.filelist
+  echo "[INFO]: Systemverilog files are saved to verible.filelist."
 }
 
 # Creates .h and .cpp files
@@ -32,7 +39,7 @@ function buildTestbenchExecutable() {
   $COMPILER $VERILATOR_FLAGS --cc $ALL_MODULES --top-module $BASE_NAME --exe $TEST_BENCH_CC -Mdir $TARGET_DIR --trace &&
     make -C $TARGET_DIR -f $TOP_LEVEL_MAKE CXX="$CXX" CXXFLAGS+="$FLAGS" &&
     echo "[SUCCESS]: Top level module ${TOP_LEVEL_MODULE} and test bench ${TEST_BENCH_CC} compiled successfully." &&
-    echo "[SUCCESS]: Executable ${EXE} emitted."
+    echo "[SUCCESS]: Executable ${TARGET_DIR}/${EXE} emitted."
 }
 
 function parseArguments() {
@@ -40,23 +47,28 @@ function parseArguments() {
 
   NUM_PARAMETERS=$#
   OPTION="${args[0]}"
-  TEST_BENCH_CC="${args[$NUM_PARAMETERS-1]}"
-  TOP_LEVEL_MODULE=""
-  ALL_MODULES=""
 
-  if [[ $OPTION == gen ]]; then
-    TOP_LEVEL_MODULE="${args[$NUM_PARAMETERS-1]}"
-    ALL_MODULES="${args[@]:1}"
-  elif [[ $OPTION == build ]]; then
-    TOP_LEVEL_MODULE="${args[$NUM_PARAMETERS-2]}"
-    ALL_MODULES=("${args[@]:1:${#args[@]}-2}")
+  if [[ $OPTION == gen ]] || [[ $OPTION == build ]]; then
+    TEST_BENCH_CC="${args[$NUM_PARAMETERS-1]}"
+    TOP_LEVEL_MODULE=""
+    ALL_MODULES=""
+
+    if [[ $OPTION == gen ]]; then
+      TOP_LEVEL_MODULE="${args[$NUM_PARAMETERS-1]}"
+      ALL_MODULES="${args[@]:1}"
+    elif [[ $OPTION == build ]]; then
+      TOP_LEVEL_MODULE="${args[$NUM_PARAMETERS-2]}"
+      ALL_MODULES=("${args[@]:1:${#args[@]}-2}")
+    fi
+
+    # Generating file names to be emitted.
+    BASE_PATH=$(basename $TOP_LEVEL_MODULE)
+    BASE_NAME="${BASE_PATH%.*}"
+    EXE="V${BASE_NAME}"
+    TOP_LEVEL_MAKE="${EXE}.mk"
+
   fi
 
-  # Generating file names to be emitted.
-  BASE_PATH=$(basename $TOP_LEVEL_MODULE)
-  BASE_NAME="${BASE_PATH%.*}"
-  EXE="V${BASE_NAME}"
-  TOP_LEVEL_MAKE="${EXE}.mk"
 }
 
 # Main function
@@ -78,7 +90,16 @@ function main() {
 
     rm -rf obj_dir *.vcd
     ;;
+  help | h)
+
+    usage
+    ;;
+  verible)
+
+    createVeribleList
+    ;;
   *)
+    echo "Unknown Option."
     usage
     ;;
   esac
