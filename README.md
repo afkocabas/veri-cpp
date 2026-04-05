@@ -13,6 +13,7 @@ The `veri.sh` script requires the following tools to be installed:
 - `verilator`
 - `gtkwave` (By default, the script tries to generate waveforms.)
 - `g++-14`
+- vivado (For tcl option)
 
 The C++ compiler, C++ standard, compilation flags and waveform type can be changed by modifying the corresponding environment variables in `veri.sh`.
 

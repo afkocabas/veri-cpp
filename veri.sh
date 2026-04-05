@@ -20,7 +20,13 @@ function usage() {
   echo "Generate Headers:           $0 gen   src1.sv src2.sv top.sv"
   echo "Build with Testbench:       $0 build src1.sv src2.sv top.sv tb.cpp"
   echo "Clean Output Files.         $0 clean"
+  echo "Run .tcl Script.            $0 tcl sample.tcl"
   exit 1
+}
+
+function runTCL() {
+  set -x
+  vivado -mode batch -source $TCL_SCRIPT
 }
 
 function createVeribleList() {
@@ -67,8 +73,9 @@ function parseArguments() {
     EXE="V${BASE_NAME}"
     TOP_LEVEL_MAKE="${EXE}.mk"
 
+  elif [[ $OPTION == tcl ]]; then
+    TCL_SCRIPT="${args[1]}"
   fi
-
 }
 
 # Main function
@@ -97,6 +104,9 @@ function main() {
   verible)
 
     createVeribleList
+    ;;
+  tcl)
+    runTCL
     ;;
   *)
     echo "Unknown Option."
